@@ -7,6 +7,28 @@ client talking to a background daemon. This app is a thin native front-end: each
 button shells out to `tuple …`, and the header status pill reflects live state
 derived from Tuple's log.
 
+> **Disclaimer:** Unofficial and not affiliated with, endorsed by, or supported
+> by Tuple. It drives the official `tuple` CLI and the bundled `update-tuple`
+> downloads Tuple's released binary from their public bucket. "Tuple" is a
+> trademark of its respective owner. Use at your own risk (see LICENSE).
+
+## Compatibility
+
+Works on **any Linux desktop** with **GTK4 + libadwaita** — it is **not
+GNOME-specific**. Tested on GNOME (Wayland); also runs on KDE, XFCE, MATE,
+Cinnamon, etc., on Wayland or X11. It relies only on freedesktop standards
+(`.desktop` launchers, hicolor icons, XDG autostart, `org.freedesktop.Notifications`).
+
+Notes:
+
+- On non-GNOME desktops you may need to install libadwaita + the GTK4/Adw
+  introspection data (see Requirements). The UI uses Adwaita styling regardless
+  of your desktop theme.
+- Linux only (uses `/proc` and the `tuple` Linux CLI).
+- No system-tray icon (libappindicator is GTK3-only and can't load in a GTK4
+  app); background mode uses notifications + relaunch instead.
+- x86_64 and arm64 are both supported (the bundled `update-tuple` auto-detects).
+
 ## Requirements
 
 - The `tuple` CLI. You don't have to install it yourself — `./install.sh`
@@ -114,3 +136,7 @@ screen**, the portal's source picker appears — choose your screen/window there
   Tuple's own picker instead. (`tuple call` with no argument opens the daemon's
   picker window.)
 
+
+## License
+
+MIT — see [LICENSE](LICENSE).
