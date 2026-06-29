@@ -28,6 +28,8 @@ DATA_HOME = os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share")
 LOG_PATH = os.path.join(DATA_HOME, "tuple", "0", "log.txt")
 AUTH_TOKEN_PATH = os.path.join(DATA_HOME, "tuple", "0", ".auth_token")
 APP_ID = "app.tuple.Panel"
+CALL_URL_BASE = "https://tuple.app/c/"
+UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 
 
 def is_daemon_running():
@@ -352,7 +354,19 @@ class TuplePanel(Adw.ApplicationWindow):
         self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
         self.stack.add_named(self.offline_page, "offline")
         self.stack.add_named(self.page, "main")
-        self.toasts.set_child(self.stack)
+
+        # incoming-call banner shown above the content
+        self._incoming_seen = None
+        self._incoming_url = None
+        self.incoming_banner = Adw.Banner(button_label="Join")
+        self.incoming_banner.set_revealed(False)
+        self.incoming_banner.connect("button-clicked", self._on_join_incoming)
+
+        body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        body.append(self.incoming_banner)
+        body.append(self.stack)
+        self.stack.set_vexpand(True)
+        self.toasts.set_child(body)
 
         self._build_call_group()
         self._build_contacts_group()
@@ -618,6 +632,47 @@ class TuplePanel(Adw.ApplicationWindow):
         if names:
             parts.append("with " + ", ".join(names))
         self.incall_label.set_subtitle(" · ".join(parts) or "Connected")
+
+    # -- incoming-call alerts --------------------------------------------- #
+    def _incoming_caller_name(self, payload):
+        """Best-effort: a contact id appearing in the incoming payload -> name."""
+        for c, _row in self._contact_rows:
+            if c["id"] and re.search(rf"\b{c['id']}\b", payload):
+                return c["name"]
+        return None
+
+    def _handle_incoming(self, payload):
+        caller = self._incoming_caller_name(payload)
+        m = UUID_RE.search(payload)
+        self._incoming_url = (CALL_URL_BASE + m.group(0)) if m else None
+        title = f"Incoming call from {caller}" if caller else "Incoming Tuple call"
+        self.incoming_banner.set_title(title)
+        self.incoming_banner.set_revealed(True)
+        self._notify(title, "Click Join in Tuple Panel to answer." if self._incoming_url
+                     else "Open Tuple to answer.")
+
+    def _hide_incoming(self):
+        self.incoming_banner.set_revealed(False)
+
+    def _on_join_incoming(self, _banner):
+        if self._incoming_url:
+            self.do_cmd(["join", self._incoming_url], "Join")
+            self.set_in_call(True)
+        else:
+            self.toast("Couldn't determine the call link — join from Tuple.")
+        self._hide_incoming()
+
+    def _notify(self, title, body):
+        """Desktop notification via notify-send (best-effort, non-blocking)."""
+        notifier = shutil.which("notify-send")
+        if not notifier:
+            return
+        try:
+            subprocess.Popen(
+                [notifier, "-a", "Tuple Panel", "-i", "tuple-panel", title, body]
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
     def _on_new(self, *_):
         self.do_cmd(["new"], "New call")
@@ -932,6 +987,16 @@ class TuplePanel(Adw.ApplicationWindow):
         self.set_in_call(status["in_call"] and self.daemon_on is not False)
         if self.in_call:
             self._update_incall_label()  # refresh participants list live
+
+        # incoming-call alert: surface a new pending call, clear it once answered
+        incoming = status.get("incoming")
+        if self.in_call or self.daemon_on is False or not incoming:
+            self._hide_incoming()
+            if not incoming:
+                self._incoming_seen = None
+        elif incoming != self._incoming_seen:
+            self._incoming_seen = incoming
+            self._handle_incoming(incoming)
 
     def render_pill(self):
         """Render the header pill from daemon state + log-derived connection.
