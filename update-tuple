@@ -16,7 +16,14 @@ set -euo pipefail
 
 DEST="/usr/bin/tuple"
 BUCKET="https://tuple-client-releases.s3.amazonaws.com"
-ARCH="x86_64"
+
+# Tuple publishes x86_64 and arm64 builds; pick the one matching this machine.
+case "$(uname -m)" in
+  x86_64|amd64)   ARCH="x86_64" ;;
+  aarch64|arm64)  ARCH="arm64" ;;
+  *) echo "Error: unsupported architecture '$(uname -m)' (Tuple ships x86_64 and arm64)." >&2
+     exit 1 ;;
+esac
 STATE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/tuple/version"
 BIN="$(mktemp --suffix=-tuple)"
 
