@@ -21,6 +21,7 @@ import shutil  # noqa: E402
 import subprocess  # noqa: E402
 import sys  # noqa: E402
 import threading  # noqa: E402
+import time  # noqa: E402
 
 TUPLE_BIN = "tuple"
 DATA_HOME = os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share"))
@@ -152,11 +153,20 @@ class LogWatcher:
 
     CONN_RE = re.compile(r"realtime connection state: \w+ -> (\w+)")
     CLI_RE = re.compile(r"cli: (\w+)")
+    USER_RE = re.compile(r"\buser (\d+) color \w+(\s*\(local\))?")
+    INCOMING_RE = re.compile(r"received incoming call: (.*)")
+    END_MARKERS = ("invalidating call", "sfu closed", "call is no longer valid")
 
     def __init__(self, path, on_status):
         self.path = path
         self.on_status = on_status
-        self.status = {"connection": "unknown", "in_call": False, "last": ""}
+        self.status = {
+            "connection": "unknown",
+            "in_call": False,
+            "last": "",
+            "participants": [],  # remote user ids in the current call
+            "incoming": None,    # raw payload of an unanswered incoming call
+        }
         self._pos = 0
         self._monitor = None
         self._scanning = False
@@ -182,25 +192,57 @@ class LogWatcher:
         self._read_new()
         return GLib.SOURCE_CONTINUE
 
+    def _set_in_call(self, value):
+        """Set call state, resetting per-call data on each transition."""
+        if self.status["in_call"] == value:
+            return False
+        self.status["in_call"] = value
+        self.status["participants"] = []
+        if value:
+            self.status["incoming"] = None  # an answered call clears the prompt
+        return True
+
     def _process(self, line):
         changed = False
         m = self.CONN_RE.search(line)
         if m and self.status["connection"] != m.group(1):
             self.status["connection"] = m.group(1)
             changed = True
-        m = self.CLI_RE.search(line)
-        if m:
-            cmd = m.group(1)
-            self.status["last"] = cmd
-            if not self._scanning:  # in_call from stale history is unreliable
-                if cmd in ("call", "new", "join") and not self.status["in_call"]:
-                    self.status["in_call"] = True
-                elif cmd == "end" and self.status["in_call"]:
-                    self.status["in_call"] = False
-            changed = True
-        if not self._scanning and "call is no longer valid" in line and self.status["in_call"]:
-            self.status["in_call"] = False
-            changed = True
+
+        # Call state from stale history is unreliable, so only track it live.
+        if not self._scanning:
+            m = self.CLI_RE.search(line)
+            if m:
+                cmd = m.group(1)
+                self.status["last"] = cmd
+                if cmd in ("call", "new", "join"):
+                    changed |= self._set_in_call(True)
+                elif cmd == "end":
+                    changed |= self._set_in_call(False)
+                else:
+                    changed = True
+            if "call connected" in line:
+                changed |= self._set_in_call(True)
+            if any(k in line for k in self.END_MARKERS):
+                changed |= self._set_in_call(False)
+
+            # Participants joining the active call: "user 123 color Green (local)"
+            um = self.USER_RE.search(line)
+            if um and self.status["in_call"] and not um.group(2):  # skip local user
+                uid = um.group(1)
+                if uid not in self.status["participants"]:
+                    self.status["participants"].append(uid)
+                    changed = True
+
+            im = self.INCOMING_RE.search(line)
+            if im:
+                self.status["incoming"] = im.group(1).strip()
+                changed = True
+        else:
+            m = self.CLI_RE.search(line)
+            if m:
+                self.status["last"] = m.group(1)
+
         return changed
 
     def _read_new(self):
@@ -224,7 +266,9 @@ class LogWatcher:
             if self._process(line):
                 changed = True
         if changed:
-            self.on_status(dict(self.status))
+            snapshot = dict(self.status)
+            snapshot["participants"] = list(self.status["participants"])
+            self.on_status(snapshot)
 
 
 # --------------------------------------------------------------------------- #
@@ -265,7 +309,9 @@ class TuplePanel(Adw.ApplicationWindow):
         self.set_default_size(520, 760)
 
         # status pill widgets (in header)
-        self._conn_status = {"connection": "unknown", "in_call": False}
+        self._conn_status = {"connection": "unknown", "in_call": False, "participants": []}
+        self._call_started = None  # monotonic time when the current call connected
+        self._call_timer_id = None
         self._pill_dot = make_dot("grey")
         self._pill_label = Gtk.Label(label="unknown")
         pill = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
@@ -527,11 +573,51 @@ class TuplePanel(Adw.ApplicationWindow):
         self.mute_row.set_visible(active)
         self.share_row.set_visible(active)
         self.end_row.set_visible(active)
-        if not active:  # reset toggles for the next call
+        if active:
+            self._start_call_timer()
+        else:  # reset toggles for the next call
+            self._stop_call_timer()
             self._suppress = True
             self.mute_row.set_active(False)
             self.share_row.set_active(False)
             self._suppress = False
+
+    # -- active-call timer / participants ---------------------------------- #
+    def _start_call_timer(self):
+        if self._call_timer_id is None:
+            self._call_started = time.monotonic()
+            self._update_incall_label()
+            self._call_timer_id = GLib.timeout_add_seconds(1, self._tick_call)
+
+    def _stop_call_timer(self):
+        if self._call_timer_id is not None:
+            GLib.source_remove(self._call_timer_id)
+            self._call_timer_id = None
+        self._call_started = None
+
+    def _tick_call(self):
+        self._update_incall_label()
+        return GLib.SOURCE_CONTINUE
+
+    @staticmethod
+    def _fmt_duration(secs):
+        h, rem = divmod(int(secs), 3600)
+        m, s = divmod(rem, 60)
+        return f"{h}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
+
+    def _participant_names(self):
+        by_id = {c["id"]: c["name"] for c, _row in self._contact_rows}
+        return [by_id.get(uid, f"user {uid}")
+                for uid in self._conn_status.get("participants", [])]
+
+    def _update_incall_label(self):
+        parts = []
+        if self._call_started is not None:
+            parts.append(self._fmt_duration(time.monotonic() - self._call_started))
+        names = self._participant_names()
+        if names:
+            parts.append("with " + ", ".join(names))
+        self.incall_label.set_subtitle(" · ".join(parts) or "Connected")
 
     def _on_new(self, *_):
         self.do_cmd(["new"], "New call")
@@ -844,7 +930,8 @@ class TuplePanel(Adw.ApplicationWindow):
         self.render_pill()
         # keep the Call group's layout in sync with observed call state
         self.set_in_call(status["in_call"] and self.daemon_on is not False)
-        self.incall_label.set_subtitle(status["connection"].capitalize())
+        if self.in_call:
+            self._update_incall_label()  # refresh participants list live
 
     def render_pill(self):
         """Render the header pill from daemon state + log-derived connection.
