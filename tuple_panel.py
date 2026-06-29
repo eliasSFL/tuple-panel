@@ -29,6 +29,8 @@ LOG_PATH = os.path.join(DATA_HOME, "tuple", "0", "log.txt")
 AUTH_TOKEN_PATH = os.path.join(DATA_HOME, "tuple", "0", ".auth_token")
 APP_ID = "app.tuple.Panel"
 CALL_URL_BASE = "https://tuple.app/c/"
+CONFIG_HOME = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+AUTOSTART_PATH = os.path.join(CONFIG_HOME, "autostart", "tuple-panel.desktop")
 UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 
 
@@ -307,6 +309,10 @@ class TuplePanel(Adw.ApplicationWindow):
         self.cli = cli
         self._suppress = False  # guard programmatic switch/combo changes
         self._contact_rows = []  # (data, row) for search filtering
+        self._really_quit = False
+        self._bg_enabled = os.path.exists(AUTOSTART_PATH)  # run-in-background
+        self._bg_notified = False
+        self.connect("close-request", self._on_close_request)
 
         self.set_default_size(520, 760)
 
@@ -431,10 +437,17 @@ class TuplePanel(Adw.ApplicationWindow):
             ("settings", self._on_settings),
             ("update", self._on_update),
             ("about", self._on_about),
+            ("quit", self._on_quit),
         ]:
             act = Gio.SimpleAction.new(name, None)
             act.connect("activate", handler)
             self.add_action(act)
+
+        bg = Gio.SimpleAction.new_stateful(
+            "background", None, GLib.Variant.new_boolean(self._bg_enabled)
+        )
+        bg.connect("change-state", self._on_toggle_background)
+        self.add_action(bg)
 
         self.menu_button = Gtk.MenuButton(icon_name="open-menu-symbolic")
         self.menu_button.set_tooltip_text("Account & daemon")
@@ -463,8 +476,13 @@ class TuplePanel(Adw.ApplicationWindow):
         misc = Gio.Menu()
         misc.append("Settings", "win.settings")
         misc.append("Check for Tuple updates…", "win.update")
+        misc.append("Run in background (start at login)", "win.background")
         misc.append("About", "win.about")
         menu.append_section(None, misc)
+
+        quit_section = Gio.Menu()
+        quit_section.append("Quit", "win.quit")
+        menu.append_section(None, quit_section)
 
         self.menu_button.set_menu_model(menu)
 
@@ -933,6 +951,60 @@ class TuplePanel(Adw.ApplicationWindow):
                 return
         self.toast("No terminal found — run `update-tuple` manually to update.")
 
+    # -- background mode / run-on-login ----------------------------------- #
+    def _self_exec_path(self):
+        for d in (
+            os.path.dirname(os.path.realpath(sys.argv[0])),
+            os.environ.get("XDG_BIN_HOME", ""),
+            os.path.expanduser("~/.local/bin"),
+        ):
+            cand = os.path.join(d, "tuple-panel") if d else ""
+            if cand and os.access(cand, os.X_OK):
+                return cand
+        return os.path.realpath(sys.argv[0])
+
+    def _on_toggle_background(self, action, value):
+        enabled = value.get_boolean()
+        action.set_state(value)
+        self._bg_enabled = enabled
+        try:
+            if enabled:
+                os.makedirs(os.path.dirname(AUTOSTART_PATH), exist_ok=True)
+                with open(AUTOSTART_PATH, "w") as f:
+                    f.write(
+                        "[Desktop Entry]\n"
+                        "Type=Application\n"
+                        "Name=Tuple Panel (background)\n"
+                        f"Exec={self._self_exec_path()} --background\n"
+                        "Icon=tuple-panel\n"
+                        "Terminal=false\n"
+                        "X-GNOME-Autostart-enabled=true\n"
+                    )
+                self.toast("Will start in the background at login. "
+                           "Closing the window now keeps it running.")
+            else:
+                if os.path.exists(AUTOSTART_PATH):
+                    os.remove(AUTOSTART_PATH)
+                self.toast("Background mode off — closing the window will quit.")
+        except OSError as exc:
+            self.toast(f"Couldn't update autostart: {exc}")
+
+    def _on_close_request(self, *_):
+        # In background mode, closing the window hides it (keeps watching for
+        # incoming calls) instead of quitting. Quit from the menu to exit.
+        if self._really_quit or not self._bg_enabled:
+            return False  # allow the window to close / app to quit
+        self.set_visible(False)
+        if not self._bg_notified:
+            self._bg_notified = True
+            self._notify("Tuple Panel is still running",
+                         "You'll be alerted on incoming calls. Quit from the menu to exit.")
+        return True  # prevent destroy
+
+    def _on_quit(self, *_):
+        self._really_quit = True
+        self.get_application().quit()
+
     def _on_about(self, *_):
         about = Adw.AboutDialog(
             application_name="Tuple Panel",
@@ -1039,8 +1111,14 @@ class App(Adw.Application):
             provider,
             Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
         )
-        if not self.win:
+        first_run = self.win is None
+        if first_run:
             self.win = TuplePanel(self, self.cli)
+        # Started at login with --background: stay running (window hidden) so we
+        # can watch for incoming calls, but don't pop the window. Any later
+        # activation (relaunch) shows it.
+        if first_run and "--background" in sys.argv:
+            return
         self.win.present()
 
 

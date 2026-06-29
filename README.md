@@ -59,9 +59,10 @@ visible.
 | Area      | Controls                                                                 |
 |-----------|--------------------------------------------------------------------------|
 | Header    | Live status pill (disconnected / connection / in-call), Refresh, account & daemon menu |
-| Call      | New call, Join by URL, End call, Mute mic, Share screen                   |
-| Contacts  | Availability dot, favorite ⭐ toggle, per-contact Call, search box        |
-| Menu      | Daemon on/off, Log in / Auth code / Log out, **Settings**, **Check for Tuple updates**, About |
+| Call      | New call, Join by URL, End call, Mute mic, Share screen, **live call timer + participants** |
+| Incoming  | **Banner + desktop notification on incoming calls, with a Join button**   |
+| Contacts  | Availability dot (**auto-refreshed**), favorite ⭐ toggle, per-contact Call, search, loading/empty/error states |
+| Menu      | Daemon on/off, Log in / Auth code / Log out, **Settings**, **Check for Tuple updates**, **Run in background**, About, Quit |
 | Settings  | Opened from the menu — `overlay`, `capture`, `guest-mode`, `transcription-model` (auto-detected) |
 
 Every command result is shown as a toast (success or the CLI's error text).
@@ -76,11 +77,25 @@ The UI shows only the controls that make sense for your current state:
 - **Account menu** — shows **Log in** / **Enter auth code** only when logged out, and
   **Log out** only when logged in (detected from `…/tuple/0/.auth_token`).
 - **Daemon menu** — shows **Start daemon (on)** when the daemon is stopped, and
-  **Stop daemon (off)** when it's running (detected by finding the persistent
-  `tuple on` process via `/proc`).
+  **Stop daemon (off)** when it's running (detected by finding the `tuple` process
+  that holds the log file open — the daemon keeps whatever argv first started it).
 
 State is re-evaluated on launch, when you hit **Refresh**, every few seconds while
 running (so changes made outside the app show up too), and continuously from the log.
+
+## Run in background
+
+Enable **menu → Run in background (start at login)** to:
+
+- add an autostart entry (`~/.config/autostart/tuple-panel.desktop`, launched with
+  `--background` so it starts hidden), and
+- make the window **close to background** instead of quitting — the app keeps
+  watching the log so you still get incoming-call notifications with no window
+  open. Reopen it by launching **Tuple Panel** again; fully exit via **menu → Quit**.
+
+Note: there's no system-tray icon. `libappindicator` is GTK3-only and can't be
+loaded into this GTK4 app, and stock GNOME has no tray anyway — so background mode
+relies on notifications + relaunch instead of a tray menu.
 
 ## Wayland & screen sharing
 
