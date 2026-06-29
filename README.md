@@ -69,6 +69,9 @@ The UI shows only the controls that make sense for your current state:
 State is re-evaluated on launch, when you hit **Refresh**, every few seconds while
 running (so changes made outside the app show up too), and continuously from the log.
 
+The app **starts the daemon (`tuple on`) automatically when it opens** so you can
+make and receive calls right away. You can still stop it from the menu.
+
 ## Wayland & screen sharing
 
 On Wayland, screen capture goes through the desktop portal / PipeWire. In the
