@@ -284,10 +284,28 @@ class TuplePanel(Adw.ApplicationWindow):
         header.pack_end(self._make_menu_button())
         header.pack_end(pill)
 
-        # body
+        # body: a stack that swaps between an "offline" prompt (daemon stopped)
+        # and the app content (call + contacts).
         self.toasts = Adw.ToastOverlay()
         self.page = Adw.PreferencesPage()
-        self.toasts.set_child(self.page)
+
+        self.offline_page = Adw.StatusPage(
+            icon_name="network-offline-symbolic",
+            title="Tuple isn't running",
+            description="Start the Tuple daemon to load your contacts and make calls.",
+        )
+        start_btn = Gtk.Button(label="Start Tuple")
+        start_btn.add_css_class("suggested-action")
+        start_btn.add_css_class("pill")
+        start_btn.set_halign(Gtk.Align.CENTER)
+        start_btn.connect("clicked", lambda *_: self._daemon_cmd(True))
+        self.offline_page.set_child(start_btn)
+
+        self.stack = Gtk.Stack()
+        self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+        self.stack.add_named(self.offline_page, "offline")
+        self.stack.add_named(self.page, "main")
+        self.toasts.set_child(self.stack)
 
         self._build_call_group()
         self._build_contacts_group()
@@ -308,7 +326,11 @@ class TuplePanel(Adw.ApplicationWindow):
         # keep daemon/login menu state fresh even if changed outside the app
         GLib.timeout_add_seconds(3, self._poll_account_state)
 
-        self.refresh_all()
+        # pick the initial view from the real daemon state (synchronous so we
+        # don't flash the wrong screen). set_daemon refreshes contacts when the
+        # daemon is up — and listing contacts would otherwise *start* the daemon,
+        # which we don't want while showing the "start Tuple" prompt.
+        self.set_daemon(is_daemon_running())
 
     def _poll_account_state(self):
         self.detect_daemon()
@@ -399,6 +421,10 @@ class TuplePanel(Adw.ApplicationWindow):
             if value is False:
                 self.set_in_call(False)  # no daemon => not in a call
             self.render_pill()
+            # swap between the "start Tuple" prompt and the app content
+            self.stack.set_visible_child_name("main" if value else "offline")
+            if value:
+                self.refresh_all()  # daemon is up now — load contacts/settings
 
     def detect_daemon(self):
         """Check whether the daemon process is alive (off the main thread)."""
