@@ -137,6 +137,16 @@ screen**, the portal's source picker appears — choose your screen/window there
   picker window.)
 
 
+## Project layout
+
+```
+tuple_panel.py            the app (single file)
+install.sh / uninstall.sh user-local installer
+data/tuple-panel.desktop  app-menu launcher
+data/tuple-panel.svg      app icon
+scripts/update-tuple      installs/updates the tuple CLI binary
+```
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

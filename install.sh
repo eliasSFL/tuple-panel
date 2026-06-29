@@ -15,9 +15,9 @@ ICON_DIR="$DATA_DIR/icons/hicolor/scalable/apps"
 mkdir -p "$BIN_DIR" "$APP_DIR" "$ICON_DIR"
 
 install -m 0755 "$SRC_DIR/tuple_panel.py" "$BIN_DIR/tuple-panel"
-install -m 0755 "$SRC_DIR/update-tuple" "$BIN_DIR/update-tuple"
-install -m 0644 "$SRC_DIR/tuple-panel.desktop" "$APP_DIR/tuple-panel.desktop"
-install -m 0644 "$SRC_DIR/tuple-panel.svg" "$ICON_DIR/tuple-panel.svg"
+install -m 0755 "$SRC_DIR/scripts/update-tuple" "$BIN_DIR/update-tuple"
+install -m 0644 "$SRC_DIR/data/tuple-panel.desktop" "$APP_DIR/tuple-panel.desktop"
+install -m 0644 "$SRC_DIR/data/tuple-panel.svg" "$ICON_DIR/tuple-panel.svg"
 
 # Point Exec at the absolute install path so it launches from the menu even if
 # ~/.local/bin isn't on the graphical session's PATH.
