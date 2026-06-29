@@ -19,6 +19,7 @@ import os  # noqa: E402
 import re  # noqa: E402
 import shutil  # noqa: E402
 import subprocess  # noqa: E402
+import sys  # noqa: E402
 import threading  # noqa: E402
 
 TUPLE_BIN = "tuple"
@@ -713,9 +714,29 @@ class TuplePanel(Adw.ApplicationWindow):
 
         self.cli.run_async(["logout"], cb)
 
+    def _find_update_tuple(self):
+        """Locate update-tuple without relying on PATH — when launched from the
+        app menu the session PATH usually omits ~/.local/bin. It's installed next
+        to this program, so look there (and a few known spots) too."""
+        found = shutil.which("update-tuple")
+        if found:
+            return found
+        dirs = [
+            os.path.dirname(os.path.realpath(sys.argv[0])),
+            os.environ.get("XDG_BIN_HOME", ""),
+            os.path.expanduser("~/.local/bin"),
+            "/usr/local/bin",
+            "/usr/bin",
+        ]
+        for d in dirs:
+            cand = os.path.join(d, "update-tuple") if d else ""
+            if cand and os.access(cand, os.X_OK):
+                return cand
+        return None
+
     def _on_update(self, *_):
         """Run `update-tuple` in a terminal so its sudo prompt and progress show."""
-        updater = shutil.which("update-tuple")
+        updater = self._find_update_tuple()
         if not updater:
             self.toast("update-tuple not found — install it, then run it in a terminal.")
             return
