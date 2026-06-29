@@ -585,6 +585,14 @@ class TuplePanel(Adw.ApplicationWindow):
 
         self.cli.run_async(["on" if on else "off"], cb)
 
+    def start_daemon_in_background(self):
+        """Launched at login in background mode: bring the Tuple daemon up so
+        incoming calls are actually received without the user opening the app.
+        No-op if it's already running, so a relaunch doesn't disturb a live call."""
+        if is_daemon_running():
+            return
+        self._daemon_cmd(True)
+
     def _on_daemon_on(self, *_):
         self._daemon_cmd(True)
 
@@ -1241,6 +1249,7 @@ class App(Adw.Application):
         # can watch for incoming calls, but don't pop the window. Any later
         # activation (relaunch) shows it.
         if first_run and "--background" in sys.argv:
+            self.win.start_daemon_in_background()
             return
         self.win.present()
 
