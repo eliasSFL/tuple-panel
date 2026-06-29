@@ -326,6 +326,8 @@ class TuplePanel(Adw.ApplicationWindow):
 
         # keep daemon/login menu state fresh even if changed outside the app
         GLib.timeout_add_seconds(3, self._poll_account_state)
+        # keep contact availability current while the daemon is running
+        GLib.timeout_add_seconds(30, self._auto_refresh_contacts)
 
         # pick the initial view from the real daemon state (synchronous so we
         # don't flash the wrong screen). set_daemon refreshes contacts when the
@@ -564,6 +566,8 @@ class TuplePanel(Adw.ApplicationWindow):
         search.connect("search-changed", self._on_search)
         self.contacts_group.set_header_suffix(search)
         self.page.add(self.contacts_group)
+        self._contacts_status_row = None
+        self._show_contacts_status("spinner", "Loading contacts…")
 
     def _on_search(self, entry):
         q = entry.get_text().strip().lower()
@@ -571,10 +575,39 @@ class TuplePanel(Adw.ApplicationWindow):
             hay = f"{data['name']} {data['email']}".lower()
             row.set_visible(q in hay)
 
-    def _populate_contacts(self, contacts):
+    def _clear_contacts(self):
         for _data, row in self._contact_rows:
             self.contacts_group.remove(row)
         self._contact_rows = []
+        if self._contacts_status_row is not None:
+            self.contacts_group.remove(self._contacts_status_row)
+            self._contacts_status_row = None
+
+    def _show_contacts_status(self, kind, text):
+        """Show a single non-interactive row: loading spinner / empty / error."""
+        self._clear_contacts()
+        row = Adw.ActionRow(title=text)
+        row.set_activatable(False)
+        if kind == "spinner":
+            sp = Gtk.Spinner()
+            sp.start()
+            sp.set_valign(Gtk.Align.CENTER)
+            row.add_prefix(sp)
+        elif kind == "error":
+            img = Gtk.Image.new_from_icon_name("dialog-warning-symbolic")
+            img.set_valign(Gtk.Align.CENTER)
+            row.add_prefix(img)
+        self.contacts_group.add(row)
+        self._contacts_status_row = row
+
+    def _populate_contacts(self, contacts, ok=True, err=""):
+        self._clear_contacts()
+        if not ok:
+            self._show_contacts_status("error", f"Couldn't load contacts — {err or 'error'}")
+            return
+        if not contacts:
+            self._show_contacts_status("empty", "No contacts")
+            return
 
         contacts.sort(key=lambda c: (not c["favorite"], not c["available"], c["name"].lower()))
         for c in contacts:
@@ -783,16 +816,27 @@ class TuplePanel(Adw.ApplicationWindow):
         self.refresh_settings()  # load current values, then open
         self.settings_dialog.present(self)
 
-    def refresh_all(self):
+    def refresh_contacts(self, show_loading=True):
+        if show_loading:
+            self._show_contacts_status("spinner", "Loading contacts…")
+
         def contacts_cb():
             ok, contacts, err = self.cli.list_contacts()
-            GLib.idle_add(self._populate_contacts, contacts)
-            if not ok:
-                GLib.idle_add(self.toast, f"Couldn't list contacts: {err or 'error'}")
+            GLib.idle_add(self._populate_contacts, contacts, ok, err)
 
+        threading.Thread(target=contacts_cb, daemon=True).start()
+
+    def _auto_refresh_contacts(self):
+        # Keep availability dots current. Only while the daemon is up — listing
+        # contacts would otherwise start it. Silent (no spinner) to avoid flicker.
+        if self.daemon_on:
+            self.refresh_contacts(show_loading=False)
+        return GLib.SOURCE_CONTINUE
+
+    def refresh_all(self):
         self.detect_login()
         self.detect_daemon()
-        threading.Thread(target=contacts_cb, daemon=True).start()
+        self.refresh_contacts(show_loading=True)
         self.refresh_settings()
 
     def on_status(self, status):
