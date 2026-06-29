@@ -63,18 +63,18 @@ GTK4 runs natively on Wayland — no flags required.
 
 This copies the app to `~/.local/bin/tuple-panel` (executable, on your PATH), a
 launcher + icon to `~/.local/share/`, and the `update-tuple` helper to
-`~/.local/bin/`. If the `tuple` CLI isn't installed yet, it bootstraps it (asks
-for sudo to write `/usr/bin/tuple`). Afterwards run it with `tuple-panel`, or
-launch **Tuple Panel** from your app menu. Remove the panel with `./uninstall.sh`
-(this leaves the `tuple` CLI and your login in place).
+`~/.local/bin/`. If the `tuple` CLI isn't installed yet, it bootstraps it into
+`~/.local/bin/tuple` (no sudo). Afterwards run it with `tuple-panel`, or launch
+**Tuple Panel** from your app menu. Remove the panel with `./uninstall.sh` (this
+leaves the `tuple` CLI and your login in place).
 
 ## Updating the Tuple CLI
 
 Tuple has no built-in updater, so the bundled **`update-tuple`** fetches the
-latest release binary and installs it (`update-tuple --force` to reinstall,
-`update-tuple <version>` to pin). From the app, use **menu → Check for Tuple
-updates…**, which runs it in a terminal so its sudo prompt and progress are
-visible.
+latest release binary and installs it to `~/.local/bin/tuple` — no sudo
+(`update-tuple --force` to reinstall, `update-tuple <version>` to pin). From the
+app, use **menu → Check for Tuple updates…**, which runs it in a terminal so you
+can watch the download progress.
 
 ## What it does
 

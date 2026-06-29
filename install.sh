@@ -37,8 +37,7 @@ if command -v tuple >/dev/null 2>&1; then
   echo "tuple CLI: already installed ($(command -v tuple)) — run 'update-tuple' to update it."
 else
   echo
-  echo "The 'tuple' CLI was not found; installing the latest release now."
-  echo "(This downloads the binary and needs sudo to write /usr/bin/tuple.)"
+  echo "The 'tuple' CLI was not found; installing the latest release into $BIN_DIR."
   if "$BIN_DIR/update-tuple"; then
     echo "tuple CLI installed."
   else

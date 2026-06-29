@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # update-tuple — download the latest Tuple pair-programming client and install
-# it to /usr/bin/tuple.
+# it to ~/.local/bin/tuple (user-local, no sudo).
 #
 # Tuple ships as a single self-contained binary in a public S3 bucket (no apt
 # repo, no version flag), so nothing else updates it. This script does. Your
@@ -14,7 +14,7 @@
 #
 set -euo pipefail
 
-DEST="/usr/bin/tuple"
+DEST="${XDG_BIN_HOME:-$HOME/.local/bin}/tuple"
 BUCKET="https://tuple-client-releases.s3.amazonaws.com"
 
 # Tuple publishes x86_64 and arm64 builds; pick the one matching this machine.
@@ -94,11 +94,10 @@ if [[ "$(head -c4 "$BIN" | od -An -tx1 | tr -d ' \n')" != "7f454c46" ]]; then
   exit 1
 fi
 
-# Writing to /usr/bin needs root.
-SUDO=""; [[ "$(id -u)" -ne 0 ]] && SUDO="sudo"
-
-echo "Installing to $DEST (sudo password may be required)..."
-$SUDO install -m 0755 "$BIN" "$DEST"
+# ~/.local/bin is user-writable — no sudo needed.
+echo "Installing to $DEST..."
+mkdir -p "$(dirname "$DEST")"
+install -m 0755 "$BIN" "$DEST"
 
 # Record what we installed so the next run can skip if unchanged.
 mkdir -p "$(dirname "$STATE_FILE")"
@@ -106,3 +105,7 @@ echo "$LATEST" > "$STATE_FILE"
 
 echo "Done. Tuple is now at version: $LATEST"
 echo "Launch it with 'tuple' or from your application menu."
+case ":$PATH:" in
+  *":$(dirname "$DEST"):"*) ;;
+  *) echo "NOTE: $(dirname "$DEST") is not on your PATH — add it to use 'tuple'." ;;
+esac
