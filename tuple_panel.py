@@ -395,15 +395,33 @@ class TuplePanel(Adw.ApplicationWindow):
             daemon=True,
         ).start()
 
+    def _force_connection(self, conn):
+        """Override the (possibly stale) connection state and re-render.
+        Stopping the daemon logs no disconnect line, so without this the watcher
+        keeps reporting a stale 'connected'."""
+        self.watcher.status["connection"] = conn
+        self._conn_status["connection"] = conn
+        self.render_pill()
+
+    def _daemon_cmd(self, on):
+        # Optimistic UI, then reconcile *after* the command completes — `tuple on`
+        # can take longer than a fixed timer to fork the daemon, so a timed
+        # re-check would race it and momentarily report "disconnected".
+        self.set_daemon(on)
+        self._force_connection("connecting" if on else "disconnected")
+        label = "Daemon on" if on else "Daemon off"
+
+        def cb(ok, out, err):
+            self.report(label)(ok, out, err)
+            self.detect_daemon()
+
+        self.cli.run_async(["on" if on else "off"], cb)
+
     def _on_daemon_on(self, *_):
-        self.set_daemon(True)  # optimistic
-        self.do_cmd(["on"], "Daemon on")
-        GLib.timeout_add(900, lambda: (self.detect_daemon(), False)[1])  # reconcile
+        self._daemon_cmd(True)
 
     def _on_daemon_off(self, *_):
-        self.set_daemon(False)  # optimistic
-        self.do_cmd(["off"], "Daemon off")
-        GLib.timeout_add(900, lambda: (self.detect_daemon(), False)[1])
+        self._daemon_cmd(False)
 
     # -- call group -------------------------------------------------------- #
     def _build_call_group(self):
