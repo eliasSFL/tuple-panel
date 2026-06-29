@@ -135,6 +135,11 @@ screen**, the portal's source picker appears — choose your screen/window there
   doesn't accept a contact id, it reports so via a toast — use **New call** or
   Tuple's own picker instead. (`tuple call` with no argument opens the daemon's
   picker window.)
+- **`tuple` in `~/.local/bin`**: app-menu launchers often start with a PATH that
+  omits `~/.local/bin`, so a `tuple` installed there can read as "not found".
+  The app prepends `~/.local/bin` (and `$XDG_BIN_HOME`) to its PATH at startup to
+  handle this; for using `tuple` in a terminal, make sure that directory is on
+  your shell PATH (add `export PATH="$HOME/.local/bin:$PATH"` to `~/.profile`).
 
 
 ## Project layout

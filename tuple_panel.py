@@ -34,6 +34,17 @@ AUTOSTART_PATH = os.path.join(CONFIG_HOME, "autostart", "tuple-panel.desktop")
 UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 
 
+def ensure_local_bin_on_path():
+    """App-menu launchers (GNOME etc.) start with a PATH that often omits
+    ~/.local/bin — where `tuple` and `update-tuple` now live. Prepend it so
+    shutil.which / subprocess can find them, regardless of how we were launched."""
+    parts = os.environ.get("PATH", "").split(os.pathsep)
+    for d in (os.path.expanduser("~/.local/bin"), os.environ.get("XDG_BIN_HOME", "")):
+        if d and d not in parts:
+            parts.insert(0, d)
+    os.environ["PATH"] = os.pathsep.join(p for p in parts if p)
+
+
 def is_daemon_running():
     """Detect the Tuple daemon by finding the `tuple` process that holds the log
     file open. The daemon keeps the argv of whichever command first started it
@@ -1132,6 +1143,7 @@ class App(Adw.Application):
 
 
 def main():
+    ensure_local_bin_on_path()
     app = App()
     return app.run(None)
 
