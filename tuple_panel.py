@@ -296,17 +296,7 @@ class TuplePanel(Adw.ApplicationWindow):
         # keep daemon/login menu state fresh even if changed outside the app
         GLib.timeout_add_seconds(3, self._poll_account_state)
 
-        self._autostart_daemon()
         self.refresh_all()
-
-    def _autostart_daemon(self):
-        """Ensure the daemon is running when the app opens."""
-        self.set_daemon(True)  # optimistic; reconciled by detect_daemon
-        def cb(ok, out, err):
-            if not ok:
-                self.toast(f"Couldn't start daemon: {err or out or 'error'}")
-            self.detect_daemon()
-        self.cli.run_async(["on"], cb)
 
     def _poll_account_state(self):
         self.detect_daemon()
