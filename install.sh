@@ -16,6 +16,10 @@ install -m 0755 "$SRC_DIR/tuple_panel.py" "$BIN_DIR/tuple-panel"
 install -m 0644 "$SRC_DIR/tuple-panel.desktop" "$APP_DIR/tuple-panel.desktop"
 install -m 0644 "$SRC_DIR/tuple-panel.svg" "$ICON_DIR/tuple-panel.svg"
 
+# Point Exec at the absolute install path so it launches from the menu even if
+# ~/.local/bin isn't on the graphical session's PATH.
+sed -i "s|^Exec=.*|Exec=$BIN_DIR/tuple-panel|" "$APP_DIR/tuple-panel.desktop"
+
 update-desktop-database "$APP_DIR" 2>/dev/null || true
 gtk-update-icon-cache -f -t "$DATA_DIR/icons/hicolor" 2>/dev/null || true
 
