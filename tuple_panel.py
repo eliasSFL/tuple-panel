@@ -350,8 +350,9 @@ class TuplePanel(Adw.ApplicationWindow):
         header.pack_end(self._make_menu_button())
         header.pack_end(pill)
 
-        # body: a stack that swaps between an "offline" prompt (daemon stopped)
+        # body: a stack that swaps between prompts (daemon stopped / logged out)
         # and the app content (call + contacts).
+        self._current_view = None
         self.toasts = Adw.ToastOverlay()
         self.page = Adw.PreferencesPage()
 
@@ -367,9 +368,22 @@ class TuplePanel(Adw.ApplicationWindow):
         start_btn.connect("clicked", lambda *_: self._daemon_cmd(True))
         self.offline_page.set_child(start_btn)
 
+        self.login_page = Adw.StatusPage(
+            icon_name="avatar-default-symbolic",
+            title="Not logged in",
+            description="Log in to your Tuple account to see contacts and make calls.",
+        )
+        login_btn = Gtk.Button(label="Log in")
+        login_btn.add_css_class("suggested-action")
+        login_btn.add_css_class("pill")
+        login_btn.set_halign(Gtk.Align.CENTER)
+        login_btn.connect("clicked", self._on_login)
+        self.login_page.set_child(login_btn)
+
         self.stack = Gtk.Stack()
         self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
         self.stack.add_named(self.offline_page, "offline")
+        self.stack.add_named(self.login_page, "login")
         self.stack.add_named(self.page, "main")
 
         # incoming-call banner shown above the content
@@ -406,10 +420,12 @@ class TuplePanel(Adw.ApplicationWindow):
         # keep contact availability current while the daemon is running
         GLib.timeout_add_seconds(30, self._auto_refresh_contacts)
 
-        # pick the initial view from the real daemon state (synchronous so we
-        # don't flash the wrong screen). set_daemon refreshes contacts when the
-        # daemon is up — and listing contacts would otherwise *start* the daemon,
-        # which we don't want while showing the "start Tuple" prompt.
+        # Pick the initial view from the real state (synchronous so we don't
+        # flash the wrong screen). Login state is read first, then the daemon —
+        # so contacts are only loaded once the daemon is up AND we're logged in
+        # (listing contacts would otherwise start the daemon, and we don't want
+        # that behind the "start Tuple" / "log in" prompts).
+        self.detect_login()
         self.set_daemon(is_daemon_running())
 
     def _poll_account_state(self):
@@ -497,10 +513,27 @@ class TuplePanel(Adw.ApplicationWindow):
 
         self.menu_button.set_menu_model(menu)
 
+    def _update_view(self):
+        """Pick the page for the current state: start-daemon prompt -> log-in
+        prompt -> app content. Loads contacts/settings when entering 'main'."""
+        if self.daemon_on is not True:        # off or not yet known
+            view = "offline"
+        elif self.logged_in is not True:      # logged out or not yet known
+            view = "login"
+        else:
+            view = "main"
+        if view == self._current_view:
+            return
+        self._current_view = view
+        self.stack.set_visible_child_name(view)
+        if view == "main":
+            self.refresh_all()  # daemon up + logged in — load contacts/settings
+
     def set_logged_in(self, value):
         if value != self.logged_in:
             self.logged_in = value
             self._rebuild_menu()
+            self._update_view()
 
     def detect_login(self):
         try:
@@ -515,10 +548,7 @@ class TuplePanel(Adw.ApplicationWindow):
             if value is False:
                 self.set_in_call(False)  # no daemon => not in a call
             self.render_pill()
-            # swap between the "start Tuple" prompt and the app content
-            self.stack.set_visible_child_name("main" if value else "offline")
-            if value:
-                self.refresh_all()  # daemon is up now — load contacts/settings
+            self._update_view()
 
     def detect_daemon(self):
         """Check whether the daemon process is alive (off the main thread)."""
@@ -883,9 +913,28 @@ class TuplePanel(Adw.ApplicationWindow):
     # -- account dialogs --------------------------------------------------- #
     def _on_login(self, *_):
         def cb(ok, out, err):
-            msg = out or err or ("Login started." if ok else "Login failed.")
-            dlg = Adw.AlertDialog(heading="Log in", body=msg)
-            dlg.add_response("ok", "OK")
+            body = (out or err or "").strip() or (
+                "Login started — open the link above, then paste the code below."
+                if ok else "Couldn't start login."
+            )
+            dlg = Adw.AlertDialog(heading="Log in to Tuple", body=body)
+            entry = Gtk.Entry(placeholder_text="Paste auth code here")
+            dlg.set_extra_child(entry)
+            dlg.add_response("cancel", "Cancel")
+            dlg.add_response("ok", "Authorize")
+            dlg.set_default_response("ok")
+            dlg.set_response_appearance("ok", Adw.ResponseAppearance.SUGGESTED)
+
+            def on_resp(_d, resp):
+                code = entry.get_text().strip()
+                if resp == "ok" and code:
+                    def acb(aok, aout, aerr):
+                        self.report("Authorize")(aok, aout, aerr)
+                        self.detect_login()  # re-check token -> may switch to main
+
+                    self.cli.run_async(["auth", code], acb)
+
+            dlg.connect("response", on_resp)
             dlg.present(self)
 
         self.cli.run_async(["login"], cb)

@@ -93,6 +93,9 @@ Every command result is shown as a toast (success or the CLI's error text).
 
 The UI shows only the controls that make sense for your current state:
 
+- **Full-screen prompts** — if the daemon is stopped you get a **Start Tuple**
+  prompt; if it's running but you're logged out, a **Log in** prompt. The contacts
+  and call view appears only once the daemon is up *and* you're logged in.
 - **Call group** — when you're *not* in a call it shows **New call** and **Join URL**.
   Once a call starts (you press New/Join/Call, or the log shows a call) those are
   replaced by an **In a call** row plus **Mute**, **Share screen**, and **End call**.
