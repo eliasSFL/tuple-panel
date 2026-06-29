@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Tuple Panel
+Comment=Native control panel for the Tuple Linux CLI
+# Set this to the absolute path of tuple_panel.py on your machine:
+Exec=python3 /home/eliascse/Documents/eliasSFL/tuple-panel/tuple_panel.py
+Icon=phone
+Terminal=false
+Categories=Network;AudioVideo;RemoteAccess;
+Keywords=tuple;pair;pairing;screen;share;call;
+StartupNotify=true
