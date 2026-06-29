@@ -934,12 +934,21 @@ class TuplePanel(Adw.ApplicationWindow):
             return
         # Keep the window open after it finishes so the user can read the result.
         line = f"{updater}; echo; read -n1 -rsp 'Done — press any key to close…'"
+        run = ["bash", "-lc", line]
+        # Cover terminals across desktops, with each one's correct exec flag.
         terminals = [
-            ("ptyxis", ["--", "bash", "-lc", line]),
-            ("kgx", ["-e", "bash", "-lc", line]),
-            ("gnome-terminal", ["--", "bash", "-lc", line]),
-            ("konsole", ["-e", "bash", "-lc", line]),
-            ("xterm", ["-e", "bash", "-lc", line]),
+            ("ptyxis", ["--", *run]),                  # GNOME (Ubuntu default)
+            ("kgx", ["-e", *run]),                     # GNOME Console
+            ("gnome-terminal", ["--", *run]),          # GNOME
+            ("konsole", ["-e", *run]),                 # KDE
+            ("xfce4-terminal", ["-x", *run]),          # XFCE
+            ("mate-terminal", ["-x", *run]),           # MATE
+            ("x-terminal-emulator", ["-e", *run]),     # Debian alternatives
+            ("alacritty", ["-e", *run]),
+            ("kitty", run),
+            ("foot", run),                             # Wayland
+            ("wezterm", ["start", "--", *run]),
+            ("xterm", ["-e", *run]),                   # universal fallback
         ]
         for term, term_args in terminals:
             if shutil.which(term):
