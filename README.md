@@ -7,6 +7,11 @@ client talking to a background daemon. This app is a thin native front-end: each
 button shells out to `tuple …`, and the header status pill reflects live state
 derived from Tuple's log.
 
+> **Note:** [Tuple for Linux](https://docs.tuple.app/getting-started/tuple-for-linux)
+> is still in **alpha** — the CLI is barebones and its commands/output may change.
+> Some of this app's live status is parsed from the CLI/log on a best-effort basis
+> and could break with a future Tuple release.
+
 > **Disclaimer:** Unofficial and not affiliated with, endorsed by, or supported
 > by Tuple. It drives the official `tuple` CLI and the bundled `update-tuple`
 > downloads Tuple's released binary from their public bucket. "Tuple" is a

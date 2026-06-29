@@ -1118,7 +1118,8 @@ class TuplePanel(Adw.ApplicationWindow):
         self.get_application().quit()
 
     def _on_about(self, *_):
-        base = "Drives the `tuple` CLI and reflects live status from its log."
+        base = ("Drives the `tuple` CLI and reflects live status from its log.\n"
+                "Tuple for Linux is still in alpha, so some status is best-effort.")
         about = Adw.AboutDialog(
             application_name="Tuple Panel",
             application_icon="phone-symbolic",
