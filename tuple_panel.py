@@ -911,22 +911,59 @@ class TuplePanel(Adw.ApplicationWindow):
         self.do_cmd(["set", name, row.get_text().strip()], f"set {name}")
 
     # -- account dialogs --------------------------------------------------- #
+    def _copy_text(self, text):
+        self.get_clipboard().set(text)
+        self.toast("Copied to clipboard")
+
+    def _open_uri(self, uri):
+        try:
+            Gtk.UriLauncher.new(uri).launch(self, None, None)
+        except Exception:  # noqa: BLE001
+            opener = shutil.which("xdg-open")
+            if opener:
+                subprocess.Popen([opener, uri])
+
     def _on_login(self, *_):
         def cb(ok, out, err):
-            body = (out or err or "").strip() or (
-                "Login started — open the link above, then paste the code below."
-                if ok else "Couldn't start login."
-            )
+            text = (out or err or "").strip()
+            m = re.search(r"https?://\S+", text)
+            url = m.group(0).rstrip(".,") if m else None
+
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+
+            if url:
+                url_entry = Gtk.Entry(text=url, editable=False, hexpand=True)
+                url_entry.set_tooltip_text(url)
+                copy_btn = Gtk.Button(icon_name="edit-copy-symbolic", tooltip_text="Copy link")
+                copy_btn.connect("clicked", lambda *_: self._copy_text(url))
+                open_btn = Gtk.Button(icon_name="external-link-symbolic", tooltip_text="Open in browser")
+                open_btn.connect("clicked", lambda *_: self._open_uri(url))
+                row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+                for w in (url_entry, copy_btn, open_btn):
+                    w.set_valign(Gtk.Align.CENTER)
+                row.append(url_entry)
+                row.append(copy_btn)
+                row.append(open_btn)
+                box.append(row)
+            elif text:  # no URL parsed — show the raw output, selectable
+                lbl = Gtk.Label(label=text, wrap=True, selectable=True, xalign=0)
+                box.append(lbl)
+
+            code_entry = Gtk.Entry(placeholder_text="Paste auth code here")
+            box.append(code_entry)
+
+            body = ("Open the link, authorize, then paste the code below."
+                    if url else ("Couldn't start login." if not ok else
+                                 "Login started — paste the code below."))
             dlg = Adw.AlertDialog(heading="Log in to Tuple", body=body)
-            entry = Gtk.Entry(placeholder_text="Paste auth code here")
-            dlg.set_extra_child(entry)
+            dlg.set_extra_child(box)
             dlg.add_response("cancel", "Cancel")
             dlg.add_response("ok", "Authorize")
             dlg.set_default_response("ok")
             dlg.set_response_appearance("ok", Adw.ResponseAppearance.SUGGESTED)
 
             def on_resp(_d, resp):
-                code = entry.get_text().strip()
+                code = code_entry.get_text().strip()
                 if resp == "ok" and code:
                     def acb(aok, aout, aerr):
                         self.report("Authorize")(aok, aout, aerr)
