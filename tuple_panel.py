@@ -29,24 +29,36 @@ APP_ID = "app.tuple.Panel"
 
 
 def is_daemon_running():
-    """The Tuple daemon runs as a persistent `tuple on` process. Detect it by
-    scanning /proc for a process whose argv is exactly ['tuple', 'on'] (this
-    excludes transient CLI commands and this panel). Linux-only, which is fine."""
+    """Detect the Tuple daemon by finding the `tuple` process that holds the log
+    file open. The daemon keeps the argv of whichever command first started it
+    (`tuple on`, `tuple ls`, ...), so we can't match on argv — but only the daemon
+    holds log.txt open continuously, and `tuple off` leaves no such process.
+    Linux-only, which is fine."""
+    try:
+        log_real = os.path.realpath(LOG_PATH)
+    except OSError:
+        return False
     try:
         for pid in os.listdir("/proc"):
             if not pid.isdigit():
                 continue
             try:
                 with open(f"/proc/{pid}/cmdline", "rb") as f:
-                    parts = [p for p in f.read().split(b"\0") if p]
+                    argv0 = f.read().split(b"\0")[0]
             except OSError:
                 continue
-            if (
-                len(parts) == 2
-                and os.path.basename(parts[0].decode("utf-8", "replace")) == "tuple"
-                and parts[1] == b"on"
-            ):
-                return True
+            if os.path.basename(argv0.decode("utf-8", "replace")) != "tuple":
+                continue
+            fd_dir = f"/proc/{pid}/fd"
+            try:
+                for fd in os.listdir(fd_dir):
+                    try:
+                        if os.path.realpath(os.path.join(fd_dir, fd)) == log_real:
+                            return True
+                    except OSError:
+                        continue
+            except OSError:
+                continue
     except OSError:
         pass
     return False
