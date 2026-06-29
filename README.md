@@ -22,11 +22,24 @@ derived from Tuple's log.
 
 ## Run
 
+Without installing:
+
 ```sh
 python3 tuple_panel.py
 ```
 
 GTK4 runs natively on Wayland — no flags required.
+
+## Install (user-local, no root)
+
+```sh
+./install.sh
+```
+
+This copies the app to `~/.local/bin/tuple-panel` (executable, on your PATH) and a
+launcher to `~/.local/share/applications/`. Afterwards run it from a terminal with
+`tuple-panel`, or launch **Tuple Panel** from your app menu. Remove it with
+`./uninstall.sh`.
 
 ## What it does
 
@@ -73,12 +86,3 @@ screen**, the portal's source picker appears — choose your screen/window there
   Tuple's own picker instead. (`tuple call` with no argument opens the daemon's
   picker window.)
 
-## Optional: add to your app launcher
-
-Edit `tuple-panel.desktop` so `Exec=` points at the absolute path of
-`tuple_panel.py`, then:
-
-```sh
-cp tuple-panel.desktop ~/.local/share/applications/
-update-desktop-database ~/.local/share/applications 2>/dev/null || true
-```
