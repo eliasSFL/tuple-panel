@@ -1235,6 +1235,10 @@ class App(Adw.Application):
         self.win = None
 
     def do_activate(self):
+        # X11 reads the window icon from here; on Wayland the icon comes from the
+        # desktop file whose basename matches our application_id (app.tuple.Panel).
+        Gtk.Window.set_default_icon_name("tuple-panel")
+
         provider = Gtk.CssProvider()
         provider.load_from_string(CSS)
         Gtk.StyleContext.add_provider_for_display(

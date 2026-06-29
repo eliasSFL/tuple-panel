@@ -155,7 +155,7 @@ screen**, the portal's source picker appears — choose your screen/window there
 ```
 tuple_panel.py            the app (single file)
 install.sh / uninstall.sh user-local installer
-data/tuple-panel.desktop  app-menu launcher
+data/app.tuple.Panel.desktop  app-menu launcher (named after the app-id)
 data/tuple-panel.svg      app icon
 scripts/update-tuple      installs/updates the tuple CLI binary
 ```
