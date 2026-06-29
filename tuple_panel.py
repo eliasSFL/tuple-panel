@@ -122,6 +122,12 @@ class TupleCLI:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def version(self):
+        """Tuple's CLI prints its version in the usage banner (no `--version`)."""
+        ok, out, err = self.run([])
+        m = re.search(r"v\d[\w.]*", f"{out}\n{err}")
+        return m.group(0) if m else None
+
     # -- parsers ----------------------------------------------------------- #
     def list_contacts(self):
         ok, out, err = self.run(["ls"])
@@ -1112,14 +1118,24 @@ class TuplePanel(Adw.ApplicationWindow):
         self.get_application().quit()
 
     def _on_about(self, *_):
+        base = "Drives the `tuple` CLI and reflects live status from its log."
         about = Adw.AboutDialog(
             application_name="Tuple Panel",
             application_icon="phone-symbolic",
             developer_name="A native GTK4 front-end for the Tuple Linux CLI",
             version="1.0",
-            comments="Drives the `tuple` CLI and reflects live status from its log.",
+            comments=f"{base}\n\nTuple CLI: checking…",
         )
         about.present(self)
+
+        # Fetch the Tuple CLI version off the main thread, then fill it in.
+        def worker():
+            ver = self.cli.version()
+            GLib.idle_add(
+                about.set_comments, f"{base}\n\nTuple CLI: {ver or 'not found'}"
+            )
+
+        threading.Thread(target=worker, daemon=True).start()
 
     # -- refresh & status -------------------------------------------------- #
     def refresh_settings(self):
