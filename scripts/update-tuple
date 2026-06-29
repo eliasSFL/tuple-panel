@@ -5,7 +5,8 @@
 #
 # Tuple ships as a single self-contained binary in a public S3 bucket (no apt
 # repo, no version flag), so nothing else updates it. This script does. Your
-# settings and login (~/.config/Tuple) are untouched — it only swaps the binary.
+# settings and login (~/.local/share/tuple) are untouched — it only swaps the
+# binary.
 #
 # Usage:
 #   update-tuple                 # install the latest release
