@@ -397,17 +397,6 @@ class TuplePanel(Adw.ApplicationWindow):
             if value is False:
                 self.set_in_call(False)  # no daemon => not in a call
             self.render_pill()
-            self.update_call_controls()
-
-    def update_call_controls(self):
-        """Calling requires the daemon — disable call controls when it's off."""
-        enabled = self.daemon_on is not False
-        self.new_btn.set_sensitive(enabled)
-        self.join_row.set_sensitive(enabled)
-        for btn in self._call_buttons:
-            btn.set_sensitive(enabled)
-        tip = None if enabled else "Start the daemon (menu) to make calls"
-        self.new_btn.set_tooltip_text(tip)
 
     def detect_daemon(self):
         """Check whether the daemon process is alive (off the main thread)."""
@@ -436,12 +425,12 @@ class TuplePanel(Adw.ApplicationWindow):
         self.new_row = Adw.ActionRow(
             title="New call", subtitle="Start and join a call with your personal URL"
         )
-        self.new_btn = Gtk.Button(label="Start")
-        self.new_btn.add_css_class("suggested-action")
-        self.new_btn.set_valign(Gtk.Align.CENTER)
-        self.new_btn.connect("clicked", self._on_new)
-        self.new_row.add_suffix(self.new_btn)
-        self.new_row.set_activatable_widget(self.new_btn)
+        new_btn = Gtk.Button(label="Start")
+        new_btn.add_css_class("suggested-action")
+        new_btn.set_valign(Gtk.Align.CENTER)
+        new_btn.connect("clicked", self._on_new)
+        self.new_row.add_suffix(new_btn)
+        self.new_row.set_activatable_widget(new_btn)
         g.add(self.new_row)
 
         self.join_row = Adw.EntryRow(title="Join URL")
@@ -520,7 +509,6 @@ class TuplePanel(Adw.ApplicationWindow):
 
     # -- contacts group ---------------------------------------------------- #
     def _build_contacts_group(self):
-        self._call_buttons = []
         self.contacts_group = Adw.PreferencesGroup(title="Contacts")
         search = Gtk.SearchEntry()
         search.set_placeholder_text("Search contacts…")
@@ -538,7 +526,6 @@ class TuplePanel(Adw.ApplicationWindow):
         for _data, row in self._contact_rows:
             self.contacts_group.remove(row)
         self._contact_rows = []
-        self._call_buttons = []
 
         contacts.sort(key=lambda c: (not c["favorite"], not c["available"], c["name"].lower()))
         for c in contacts:
@@ -560,12 +547,9 @@ class TuplePanel(Adw.ApplicationWindow):
             call_btn.set_tooltip_text(f"Call {c['name']}")
             call_btn.connect("clicked", self._on_call_contact, c)
             row.add_suffix(call_btn)
-            self._call_buttons.append(call_btn)
 
             self.contacts_group.add(row)
             self._contact_rows.append((c, row))
-
-        self.update_call_controls()
 
     def _on_star(self, btn, c):
         fav = btn.get_active()
