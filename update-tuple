@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+#
+# update-tuple — download the latest Tuple pair-programming client and install
+# it to /usr/bin/tuple.
+#
+# Tuple ships as a single self-contained binary in a public S3 bucket (no apt
+# repo, no version flag), so nothing else updates it. This script does. Your
+# settings and login (~/.config/Tuple) are untouched — it only swaps the binary.
+#
+# Usage:
+#   update-tuple                 # install the latest release
+#   update-tuple --force | -f    # re-install even if already up to date
+#   update-tuple <version>       # pin a specific release, e.g. v2026_06_10.7
+#
+set -euo pipefail
+
+DEST="/usr/bin/tuple"
+BUCKET="https://tuple-client-releases.s3.amazonaws.com"
+ARCH="x86_64"
+STATE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/tuple/version"
+BIN="$(mktemp --suffix=-tuple)"
+
+FORCE=0
+PINNED=""
+for arg in "$@"; do
+  case "$arg" in
+    --force|-f) FORCE=1 ;;
+    *)          PINNED="$arg" ;;
+  esac
+done
+
+cleanup() { rm -f "$BIN"; }
+trap cleanup EXIT
+
+# Tuple's binary has no --version flag, so we record what we installed in a
+# small state file and read it back here.
+current_version() {
+  [[ -f "$STATE_FILE" ]] && cat "$STATE_FILE" || echo ""
+}
+
+CURRENT="$(current_version)"
+echo "Current Tuple version: ${CURRENT:-not installed}"
+
+# The bucket has no "latest" pointer, so list the version folders and pick the
+# highest (version-aware sort, so .10 beats .7). An explicit version overrides.
+if [[ -n "$PINNED" ]]; then
+  LATEST="$PINNED"
+  echo "Target version: $LATEST (pinned)"
+else
+  echo "Checking latest version..."
+  LATEST="$(curl -fsSL --max-time 25 "${BUCKET}/?list-type=2&prefix=linux/&delimiter=/" \
+    | grep -oP '(?<=<Prefix>linux/)v[0-9][^<]+(?=/</Prefix>)' | sort -V | tail -n1)"
+fi
+
+if [[ -z "$LATEST" ]]; then
+  echo "Error: could not determine the latest version from the release bucket." >&2
+  exit 1
+fi
+
+URL="${BUCKET}/linux/${LATEST}/${ARCH}/tuple"
+
+# If we have no recorded version but the installed binary is already byte-for-byte
+# the target release (e.g. it was installed by hand before), treat it as current.
+# The S3 ETag is the object's MD5, so we can compare without downloading.
+if [[ -z "$CURRENT" && -x "$DEST" ]]; then
+  REMOTE_MD5="$(curl -fsSL -I "$URL" | tr -d '\r"' | sed -nE 's/^[Ee][Tt][Aa][Gg]: *//p')"
+  if [[ -n "$REMOTE_MD5" && "$(md5sum "$DEST" | awk '{print $1}')" == "$REMOTE_MD5" ]]; then
+    CURRENT="$LATEST"
+    mkdir -p "$(dirname "$STATE_FILE")"; echo "$LATEST" > "$STATE_FILE"
+  fi
+fi
+
+if [[ "$LATEST" == "$CURRENT" && "$FORCE" -eq 0 ]]; then
+  echo "Already up to date ($CURRENT). Nothing to do."
+  echo "Run 'update-tuple --force' to re-install the same version anyway."
+  exit 0
+else
+  echo "Installing version: $LATEST"
+fi
+
+echo "Downloading Tuple $LATEST..."
+curl -fL --progress-bar "$URL" -o "$BIN"
+
+# Sanity check: make sure we got an ELF binary, not an XML/HTML error page.
+if [[ "$(head -c4 "$BIN" | od -An -tx1 | tr -d ' \n')" != "7f454c46" ]]; then
+  echo "Error: downloaded file is not an ELF executable (bad version or URL?). Aborting." >&2
+  exit 1
+fi
+
+# Writing to /usr/bin needs root.
+SUDO=""; [[ "$(id -u)" -ne 0 ]] && SUDO="sudo"
+
+echo "Installing to $DEST (sudo password may be required)..."
+$SUDO install -m 0755 "$BIN" "$DEST"
+
+# Record what we installed so the next run can skip if unchanged.
+mkdir -p "$(dirname "$STATE_FILE")"
+echo "$LATEST" > "$STATE_FILE"
+
+echo "Done. Tuple is now at version: $LATEST"
+echo "Launch it with 'tuple' or from your application menu."

@@ -366,6 +366,7 @@ class TuplePanel(Adw.ApplicationWindow):
             ("auth", self._on_auth),
             ("logout", self._on_logout),
             ("settings", self._on_settings),
+            ("update", self._on_update),
             ("about", self._on_about),
         ]:
             act = Gio.SimpleAction.new(name, None)
@@ -398,6 +399,7 @@ class TuplePanel(Adw.ApplicationWindow):
 
         misc = Gio.Menu()
         misc.append("Settings", "win.settings")
+        misc.append("Check for Tuple updates…", "win.update")
         misc.append("About", "win.about")
         menu.append_section(None, misc)
 
@@ -710,6 +712,31 @@ class TuplePanel(Adw.ApplicationWindow):
             self.detect_login()
 
         self.cli.run_async(["logout"], cb)
+
+    def _on_update(self, *_):
+        """Run `update-tuple` in a terminal so its sudo prompt and progress show."""
+        updater = shutil.which("update-tuple")
+        if not updater:
+            self.toast("update-tuple not found — install it, then run it in a terminal.")
+            return
+        # Keep the window open after it finishes so the user can read the result.
+        line = f"{updater}; echo; read -n1 -rsp 'Done — press any key to close…'"
+        terminals = [
+            ("ptyxis", ["--", "bash", "-lc", line]),
+            ("kgx", ["-e", "bash", "-lc", line]),
+            ("gnome-terminal", ["--", "bash", "-lc", line]),
+            ("konsole", ["-e", "bash", "-lc", line]),
+            ("xterm", ["-e", "bash", "-lc", line]),
+        ]
+        for term, term_args in terminals:
+            if shutil.which(term):
+                try:
+                    subprocess.Popen([term, *term_args])
+                    self.toast("Checking for Tuple updates in a terminal…")
+                except Exception as exc:  # noqa: BLE001
+                    self.toast(f"Couldn't launch updater: {exc}")
+                return
+        self.toast("No terminal found — run `update-tuple` manually to update.")
 
     def _on_about(self, *_):
         about = Adw.AboutDialog(

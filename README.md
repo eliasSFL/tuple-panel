@@ -9,7 +9,10 @@ derived from Tuple's log.
 
 ## Requirements
 
-- The `tuple` CLI installed and on your `PATH` (`which tuple`), and logged in.
+- The `tuple` CLI. You don't have to install it yourself — `./install.sh`
+  bootstraps it via the bundled `update-tuple` script if it's missing. (Tuple
+  ships as a single static binary in an S3 bucket, not an apt package.) You still
+  need to be logged in (`tuple login`).
 - GTK4 + libadwaita Python bindings (PyGObject). These ship with most modern
   GNOME-based distros — no install step needed if this works:
 
@@ -36,10 +39,20 @@ GTK4 runs natively on Wayland — no flags required.
 ./install.sh
 ```
 
-This copies the app to `~/.local/bin/tuple-panel` (executable, on your PATH) and a
-launcher to `~/.local/share/applications/`. Afterwards run it from a terminal with
-`tuple-panel`, or launch **Tuple Panel** from your app menu. Remove it with
-`./uninstall.sh`.
+This copies the app to `~/.local/bin/tuple-panel` (executable, on your PATH), a
+launcher + icon to `~/.local/share/`, and the `update-tuple` helper to
+`~/.local/bin/`. If the `tuple` CLI isn't installed yet, it bootstraps it (asks
+for sudo to write `/usr/bin/tuple`). Afterwards run it with `tuple-panel`, or
+launch **Tuple Panel** from your app menu. Remove the panel with `./uninstall.sh`
+(this leaves the `tuple` CLI and your login in place).
+
+## Updating the Tuple CLI
+
+Tuple has no built-in updater, so the bundled **`update-tuple`** fetches the
+latest release binary and installs it (`update-tuple --force` to reinstall,
+`update-tuple <version>` to pin). From the app, use **menu → Check for Tuple
+updates…**, which runs it in a terminal so its sudo prompt and progress are
+visible.
 
 ## What it does
 
@@ -48,7 +61,7 @@ launcher to `~/.local/share/applications/`. Afterwards run it from a terminal wi
 | Header    | Live status pill (disconnected / connection / in-call), Refresh, account & daemon menu |
 | Call      | New call, Join by URL, End call, Mute mic, Share screen                   |
 | Contacts  | Availability dot, favorite ⭐ toggle, per-contact Call, search box        |
-| Menu      | Daemon on/off, Log in / Auth code / Log out, **Settings**, About          |
+| Menu      | Daemon on/off, Log in / Auth code / Log out, **Settings**, **Check for Tuple updates**, About |
 | Settings  | Opened from the menu — `overlay`, `capture`, `guest-mode`, `transcription-model` (auto-detected) |
 
 Every command result is shown as a toast (success or the CLI's error text).
