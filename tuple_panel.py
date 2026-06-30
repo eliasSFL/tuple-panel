@@ -180,6 +180,10 @@ class LogWatcher:
     USER_RE = re.compile(r"\buser (\d+) color \w+(\s*\(local\))?")
     INCOMING_RE = re.compile(r"received incoming call: (.*)")
     END_MARKERS = ("invalidating call", "sfu closed", "call is no longer valid")
+    # Screen capture actually starting/stopping — logged only once the portal
+    # picker is accepted and the stream is live, so a cancelled picker is a no-op.
+    SHARE_START = "OnVideoCapturerDesktop Start"
+    SHARE_STOP = "OnVideoCapturerDesktop Stop"
 
     def __init__(self, path, on_status):
         self.path = path
@@ -187,6 +191,7 @@ class LogWatcher:
         self.status = {
             "connection": "unknown",
             "in_call": False,
+            "sharing": False,    # screen capture actually running (not just requested)
             "last": "",
             "participants": [],  # remote user ids in the current call
             "incoming": None,    # raw payload of an unanswered incoming call
@@ -222,6 +227,7 @@ class LogWatcher:
             return False
         self.status["in_call"] = value
         self.status["participants"] = []
+        self.status["sharing"] = False  # sharing can't outlive the call
         if value:
             self.status["incoming"] = None  # an answered call clears the prompt
         return True
@@ -249,6 +255,13 @@ class LogWatcher:
                 changed |= self._set_in_call(True)
             if any(k in line for k in self.END_MARKERS):
                 changed |= self._set_in_call(False)
+
+            if self.SHARE_START in line and not self.status["sharing"]:
+                self.status["sharing"] = True
+                changed = True
+            elif self.SHARE_STOP in line and self.status["sharing"]:
+                self.status["sharing"] = False
+                changed = True
 
             # Participants joining the active call: "user 123 color Green (local)"
             um = self.USER_RE.search(line)
@@ -634,10 +647,16 @@ class TuplePanel(Adw.ApplicationWindow):
         self.mute_row.connect("notify::active", self._on_mute_toggle)
         g.add(self.mute_row)
 
-        self.share_row = Adw.SwitchRow(
+        self.share_row = Adw.ActionRow(
             title="Share screen", subtitle="On Wayland the portal picker appears"
         )
-        self.share_row.connect("notify::active", self._on_share_toggle)
+        self._sharing = False
+        self.share_btn = Gtk.Button(label="Share")
+        self.share_btn.add_css_class("suggested-action")
+        self.share_btn.set_valign(Gtk.Align.CENTER)
+        self.share_btn.connect("clicked", self._on_share)
+        self.share_row.add_suffix(self.share_btn)
+        self.share_row.set_activatable_widget(self.share_btn)
         g.add(self.share_row)
 
         self.end_row = Adw.ActionRow(title="End call", subtitle="Leave / end the current call")
@@ -665,12 +684,12 @@ class TuplePanel(Adw.ApplicationWindow):
         self.end_row.set_visible(active)
         if active:
             self._start_call_timer()
-        else:  # reset toggles for the next call
+        else:  # reset controls for the next call
             self._stop_call_timer()
             self._suppress = True
             self.mute_row.set_active(False)
-            self.share_row.set_active(False)
             self._suppress = False
+            self._set_sharing(False)
 
     # -- active-call timer / participants ---------------------------------- #
     def _start_call_timer(self):
@@ -770,10 +789,22 @@ class TuplePanel(Adw.ApplicationWindow):
             return
         self.do_cmd(["mute" if row.get_active() else "unmute"], "Mute" if row.get_active() else "Unmute")
 
-    def _on_share_toggle(self, row, _param):
-        if self._suppress:
-            return
-        self.do_cmd(["share" if row.get_active() else "unshare"], "Share" if row.get_active() else "Unshare")
+    def _on_share(self, _btn):
+        # Fire the command only; the button reconciles when Tuple's log reports
+        # capture actually started/stopped, so cancelling the picker is a no-op.
+        share = not self._sharing
+        self.do_cmd(["share" if share else "unshare"], "Share" if share else "Unshare")
+
+    def _set_sharing(self, on):
+        """Reflect the observed share state on the button."""
+        self._sharing = on
+        self.share_btn.set_label("Stop" if on else "Share")
+        if on:
+            self.share_btn.remove_css_class("suggested-action")
+            self.share_btn.add_css_class("destructive-action")
+        else:
+            self.share_btn.remove_css_class("destructive-action")
+            self.share_btn.add_css_class("suggested-action")
 
     # -- contacts group ---------------------------------------------------- #
     def _build_contacts_group(self):
@@ -1257,6 +1288,7 @@ class TuplePanel(Adw.ApplicationWindow):
         self.set_in_call(status["in_call"] and self.daemon_on is not False)
         if self.in_call:
             self._update_incall_label()  # refresh participants list live
+            self._set_sharing(status.get("sharing", False))
 
         # incoming-call alert: surface a new pending call, clear it once answered
         incoming = status.get("incoming")
