@@ -139,10 +139,11 @@ screen**, the portal's source picker appears — choose your screen/window there
   best-effort by tailing `~/.local/share/tuple/0/log.txt`
   (`$XDG_DATA_HOME/tuple/0/log.txt` if set). Mute/Share switches are optimistic —
   they reflect what you clicked, not a queried device state.
-- **Per-contact Call**: the app runs `tuple call <USER_ID>`. If your CLI version
-  doesn't accept a contact id, it reports so via a toast — use **New call** or
-  Tuple's own picker instead. (`tuple call` with no argument opens the daemon's
-  picker window.)
+- **Per-contact Call**: `tuple call` takes no contact id — it opens an interactive
+  picker listing your *available* contacts and reads a positional choice on stdin.
+  The app drives that picker for you: clicking **Call** matches the contact by
+  email and answers the prompt, so it rings them directly. Unavailable contacts
+  aren't offered by the picker, so the app says so instead of dialing.
 - **`tuple` in `~/.local/bin`**: app-menu launchers often start with a PATH that
   omits `~/.local/bin`, so a `tuple` installed there can read as "not found".
   The app prepends `~/.local/bin` (and `$XDG_BIN_HOME`) to its PATH at startup to

@@ -17,6 +17,7 @@ from gi.repository import Gtk, Adw, GLib, Gio, Gdk  # noqa: E402
 
 import os  # noqa: E402
 import re  # noqa: E402
+import select  # noqa: E402
 import shutil  # noqa: E402
 import subprocess  # noqa: E402
 import sys  # noqa: E402
@@ -32,6 +33,8 @@ CALL_URL_BASE = "https://tuple.app/c/"
 CONFIG_HOME = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
 AUTOSTART_PATH = os.path.join(CONFIG_HOME, "autostart", "tuple-panel.desktop")
 UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+# `tuple call`'s picker prints one "  N) Name <email>" line per available contact.
+PICKER_RE = re.compile(r"^\s*(\d+)\)\s+.*?<([^>]+)>", re.M)
 
 
 def ensure_local_bin_on_path():
@@ -854,16 +857,80 @@ class TuplePanel(Adw.ApplicationWindow):
                     f"{'Favorite' if fav else 'Unfavorite'} {c['name']}")
 
     def _on_call_contact(self, _btn, c):
-        def cb(ok, out, err):
-            if ok:
-                self.toast(f"Calling {c['name']}…")
-                self.set_in_call(True)
-            elif re.search(r"unexpected|unknown|usage", err, re.I):
-                self.toast("CLI can't dial a specific contact — use “New call” / the Tuple picker.")
-            else:
-                self.toast(f"Call failed: {err or out or 'unknown error'}")
+        # `tuple call` takes no USER_ID — it opens an interactive picker that
+        # lists *available* contacts and reads a positional choice on stdin.
+        # Drive that picker (off the main thread) to ring this specific contact.
+        threading.Thread(target=self._dial_contact, args=(c,), daemon=True).start()
 
-        self.cli.run_async(["call", c["id"]], cb)
+    def _dial_contact(self, c):
+        """Ring a specific contact by answering `tuple call`'s picker prompt.
+        The picker prints "  N) Name <email>" for each available contact, then
+        "enter a number to call:". We match our contact by email and write back
+        its number; if it isn't listed (unavailable), abort without calling."""
+        try:
+            proc = subprocess.Popen(
+                [TUPLE_BIN, "call"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
+        except Exception as exc:  # noqa: BLE001
+            GLib.idle_add(self.toast, f"Call failed: {exc}")
+            return
+
+        target = (c.get("email") or "").strip().lower()
+        options = {}  # email -> picker number
+        buf = b""
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            ready, _, _ = select.select([proc.stdout], [], [], 0.3)
+            if ready:
+                chunk = os.read(proc.stdout.fileno(), 4096)
+                if not chunk:  # EOF before any prompt
+                    break
+                buf += chunk
+                for m in PICKER_RE.finditer(buf.decode("utf-8", "replace")):
+                    options[m.group(2).strip().lower()] = m.group(1)
+                if b"enter a number" in buf.lower():
+                    break
+            elif proc.poll() is not None:
+                break
+
+        number = options.get(target)
+        if number is not None:
+            try:
+                proc.stdin.write(f"{number}\n".encode())
+                proc.stdin.flush()
+                proc.stdin.close()
+            except OSError:
+                pass
+            GLib.idle_add(self.toast, f"Calling {c['name']}…")
+            GLib.idle_add(self.set_in_call, True)
+            # Drain so the client never blocks on a full pipe, then reap it.
+            # `tuple call` hands the call to the daemon and exits.
+            try:
+                while os.read(proc.stdout.fileno(), 4096):
+                    pass
+            except OSError:
+                pass
+            proc.wait()
+            return
+
+        # Not offered by the picker (unavailable) or no prompt — don't call.
+        try:
+            proc.stdin.close()
+        except OSError:
+            pass
+        proc.terminate()
+        proc.wait()
+        text = buf.decode("utf-8", "replace")
+        if "already in a call" in text.lower():
+            GLib.idle_add(self.toast, "Already in a call.")
+        elif options:
+            GLib.idle_add(self.toast, f"{c['name']} isn't available to call right now.")
+        else:
+            last = text.strip().splitlines()[-1] if text.strip() else "no response from picker"
+            GLib.idle_add(self.toast, f"Couldn't open the call picker — {last}")
 
     # -- settings group ---------------------------------------------------- #
     def _build_settings_dialog(self):
